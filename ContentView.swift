@@ -28,7 +28,8 @@ class MIDIManager: ObservableObject {
     private func setupMIDI() {
         MIDIClientCreate("SheetMIDI" as CFString, nil, nil, &client)
         MIDIInputPortCreate(client, "Input" as CFString, { packetList, refCon, _ in
-            let manager = Unmanaged<MIDIManager>.fromOpaque(refCon!).takeUnretainedValue()
+            guard let refCon = refCon else { return }
+            let manager = Unmanaged<MIDIManager>.fromOpaque(refCon).takeUnretainedValue()
             let packets = packetList.pointee
             var packet = packets.packet
             for _ in 0..<packets.numPackets {
@@ -129,7 +130,6 @@ struct ContentView: View {
         }
     }
     
-    // 关键修正：将文件安全复制到 App 沙盒内部的 Documents 目录
     private func importFileToLocalSandbox(url: URL) {
         let safeURL = url
         guard safeURL.startAccessingSecurityScopedResource() else { return }
@@ -139,12 +139,10 @@ struct ContentView: View {
             let docsDir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
             let destinationURL = docsDir.appendingPathComponent(safeURL.lastPathComponent)
             
-            // 如果已存在同名文件则先移除
             if FileManager.default.fileExists(atPath: destinationURL.path) {
                 try FileManager.default.removeItem(at: destinationURL)
             }
             
-            // 执行复制操作
             try FileManager.default.copyItem(at: safeURL, to: destinationURL)
             
             let ext = destinationURL.pathExtension.lowercased()
