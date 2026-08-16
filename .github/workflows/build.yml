@@ -58,7 +58,7 @@ jobs:
     - name: Compile Executable with SwiftC
       run: |
         SDK_PATH=$(xcrun -sdk iphoneos --show-sdk-path)
-        xcrun -sdk iphoneos swiftc -parse-as-library \
+        xcrun -sdk iphoneos swiftc \
           Payload/SheetMusicApp.app/ContentView.swift \
           -sdk $SDK_PATH \
           -target arm64-apple-ios15.0 \
