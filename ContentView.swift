@@ -19,16 +19,19 @@ struct SheetMusic: Identifiable, Codable {
 
 // MARK: - MIDI Manager
 class MIDIManager: ObservableObject {
-    @Published var pageTurnSignal: Int? = nil
+    @Published var pageTurnSignal: Int? = nil // 1: 下一页, -1: 上一页
     private var client = MIDIClientRef()
     private var inputPort = MIDIPortRef()
     
-    init() { setupMIDI() }
+    init() {
+        setupMIDI()
+    }
     
     private func setupMIDI() {
         MIDIClientCreate("SheetMIDI" as CFString, nil, nil, &client)
-        MIDIInputPortCreate(client, "Input" as CFString, { packetList, refCon, _ in
-            guard let refCon = refCon else { return }
+        
+        let midiCallback: MIDIReadProc = { packetList, readProcRefCon, srcConnRefCon in
+            guard let refCon = readProcRefCon else { return }
             let manager = Unmanaged<MIDIManager>.fromOpaque(refCon).takeUnretainedValue()
             let packets = packetList.pointee
             var packet = packets.packet
@@ -45,10 +48,14 @@ class MIDIManager: ObservableObject {
                 }
                 packet = MIDIPacketNext(&packet).pointee
             }
-        }, Unmanaged.passUnretained(self).toOpaque(), &inputPort)
+        }
         
-        for i in 0..<MIDIGetNumberOfSources() {
-            MIDIPortConnectSource(inputPort, MIDIGetSource(i), nil)
+        MIDIInputPortCreate(client, "InputPort" as CFString, midiCallback, Unmanaged.passUnretained(self).toOpaque(), &inputPort)
+        
+        let sourceCount = MIDIGetNumberOfSources()
+        for i in 0..<sourceCount {
+            let src = MIDIGetSource(i)
+            MIDIPortConnectSource(inputPort, src, nil)
         }
     }
 }
@@ -219,7 +226,7 @@ struct SheetViewer: View {
     }
 }
 
-// PDFKit 渲染器
+// MARK: - PDFKit Swift Wrapper
 struct PDFKitRepresentView: UIViewRepresentable {
     let document: PDFDocument
     @Binding var currentPage: Int
