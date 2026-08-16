@@ -1,4 +1,4 @@
-name: Build Unsigned IPA
+name: Build Standard IPA
 
 on:
   push:
@@ -13,15 +13,19 @@ jobs:
     - name: Checkout Code
       uses: actions/checkout@v4
 
-    - name: Create Xcode Project
+    - name: Setup Project Architecture
       run: |
         mkdir -p SheetMusicApp
         mv ContentView.swift SheetMusicApp/
+        
+        # 创建标准的 Xcode 工程文件结构
         cat << 'EOF' > SheetMusicApp/Info.plist
         <?xml version="1.0" encoding="UTF-8"?>
         <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
         <plist version="1.0">
         <dict>
+            <key>CFBundleExecutable</key>
+            <string>$(EXECUTABLE_NAME)</string>
             <key>CFBundleIdentifier</key>
             <string>com.test.SheetMusicApp</string>
             <key>CFBundleName</key>
@@ -32,6 +36,10 @@ jobs:
             <string>1.0</string>
             <key>CFBundleVersion</key>
             <string>1</string>
+            <key>LSRequiresIPhoneOS</key>
+            <true/>
+            <key>UILaunchScreen</key>
+            <dict/>
             <key>UISupportedInterfaceOrientations</key>
             <array>
                 <string>UIInterfaceOrientationPortrait</string>
@@ -42,22 +50,50 @@ jobs:
         </plist>
         EOF
 
-    - name: Compile Swift Code
+    - name: Create Minimal Xcode Project
       run: |
-        xcrun -sdk iphoneos swiftc -parse-as-library \
-          SheetMusicApp/ContentView.swift \
-          -target arm64-apple-ios15.0 \
-          -o SheetMusicApp/SheetMusicApp
+        cat << 'EOF' > project.yml
+        name: SheetMusicApp
+        options:
+          bundlePrefix: com.test
+        targets:
+          SheetMusicApp:
+            type: application
+            platform: iOS
+            deploymentTarget: "15.0"
+            sources: [SheetMusicApp]
+            settings:
+              PRODUCT_BUNDLE_IDENTIFIER: com.test.SheetMusicApp
+              INFOPLIST_FILE: SheetMusicApp/Info.plist
+              GENERATE_INFOPLIST_FILE: NO
+              CODE_SIGNING_ALLOWED: NO
+              CODE_SIGNING_REQUIRED: NO
+        EOF
+        
+        # 使用 xgen 安装并创建标准 xcodeproj
+        brew install xcodegen
+        xcodegen generate
 
-    - name: Package into IPA
+    - name: Build App with Xcodebuild
+      run: |
+        xcodebuild -project SheetMusicApp.xcodeproj \
+          -scheme SheetMusicApp \
+          -sdk iphoneos \
+          -configuration Release \
+          -derivedDataPath build \
+          CODE_SIGNING_ALLOWED=NO \
+          CODE_SIGNING_REQUIRED=NO \
+          CODE_SIGN_IDENTITY="" \
+          CODE_SIGN_ENTITLEMENTS=""
+
+    - name: Package Standard IPA
       run: |
         mkdir -p Payload
-        cp -r SheetMusicApp Payload/SheetMusicApp.app
-        cp SheetMusicApp/Info.plist Payload/SheetMusicApp.app/
+        cp -R build/Build/Products/Release-iphoneos/SheetMusicApp.app Payload/
         zip -r SheetMusicApp.ipa Payload
 
     - name: Upload IPA Artifact
       uses: actions/upload-artifact@v4
       with:
-        name: SheetMusicApp-Unsigned-IPA
+        name: SheetMusicApp-Standard-IPA
         path: SheetMusicApp.ipa
