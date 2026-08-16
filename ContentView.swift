@@ -28,21 +28,20 @@ class MIDIManager: ObservableObject {
     }
     
     private func setupMIDI() {
-        MIDIClientCreate("SheetMIDI" as CFString, nil, nil, &client)
+        var status = MIDIClientCreate("SheetMIDI" as CFString, nil, nil, &client)
+        guard status == noErr else { return }
         
-        let midiCallback: MIDIReadProc = { packetList, readProcRefCon, srcConnRefCon in
-            guard let refCon = readProcRefCon else { return }
-            let manager = Unmanaged<MIDIManager>.fromOpaque(refCon).takeUnretainedValue()
+        status = MIDIInputPortCreateWithBlock(client, "InputPort" as CFString, &inputPort) { packetList, _ in
             let packets = packetList.pointee
             var packet = packets.packet
             for _ in 0..<packets.numPackets {
                 if packet.length >= 2 {
-                    let status = packet.data.0
+                    let statusByte = packet.data.0
                     let note = packet.data.1
-                    if (status & 0xF0) == 0xB0 || (status & 0xF0) == 0x90 {
-                        DispatchQueue.main.async {
-                            if note == 64 { manager.pageTurnSignal = 1 }
-                            else if note == 65 { manager.pageTurnSignal = -1 }
+                    if (statusByte & 0xF0) == 0xB0 || (statusByte & 0xF0) == 0x90 {
+                        DispatchQueue.main.async { [weak self] in
+                            if note == 64 { self?.pageTurnSignal = 1 }
+                            else if note == 65 { self?.pageTurnSignal = -1 }
                         }
                     }
                 }
@@ -50,17 +49,17 @@ class MIDIManager: ObservableObject {
             }
         }
         
-        MIDIInputPortCreate(client, "InputPort" as CFString, midiCallback, Unmanaged.passUnretained(self).toOpaque(), &inputPort)
-        
-        let sourceCount = MIDIGetNumberOfSources()
-        for i in 0..<sourceCount {
-            let src = MIDIGetSource(i)
-            MIDIPortConnectSource(inputPort, src, nil)
+        if status == noErr {
+            let sourceCount = MIDIGetNumberOfSources()
+            for i in 0..<sourceCount {
+                let src = MIDIGetSource(i)
+                MIDIPortConnectSource(inputPort, src, nil)
+            }
         }
     }
 }
 
-// MARK: - Main App
+// MARK: - App Main Entry
 @main
 struct SheetMusicApp: App {
     var body: some Scene {
