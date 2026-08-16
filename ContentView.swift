@@ -19,7 +19,7 @@ struct SheetMusic: Identifiable, Codable {
 
 // MARK: - MIDI Manager
 class MIDIManager: ObservableObject {
-    @Published var pageTurnSignal: Int? = nil // 1: 下一页, -1: 上一页
+    @Published var pageTurnSignal: Int? = nil
     private var client = MIDIClientRef()
     private var inputPort = MIDIPortRef()
     
@@ -77,7 +77,6 @@ struct ContentView: View {
     var body: some View {
         NavigationView {
             VStack {
-                // 分类筛选器
                 Picker("分类", selection: $selectedFolder) {
                     ForEach(folders, id: \.self) { folder in
                         Text(folder).tag(folder)
@@ -86,10 +85,9 @@ struct ContentView: View {
                 .pickerStyle(.segmented)
                 .padding(.horizontal)
                 
-                // 乐谱列表
                 if filteredSheets.isEmpty {
                     Spacer()
-                    Text("暂无乐谱，请点击右上角导入")
+                    Text("暂无乐谱，点击右上角选择 PDF 或图片")
                         .foregroundColor(.gray)
                     Spacer()
                 } else {
@@ -111,7 +109,6 @@ struct ContentView: View {
             }
             .navigationTitle("我的乐谱库")
             .toolbar {
-                // 右上角导入按钮
                 Button(action: { isImporting = true }) {
                     Image(systemName: "square.and.arrow.down")
                         .font(.title3)
@@ -119,33 +116,53 @@ struct ContentView: View {
             }
             .fileImporter(
                 isPresented: $isImporting,
-                allowedContentTypes: [.pdf, .image],
+                allowedContentTypes: [.pdf, .image, .png, .jpeg],
                 allowsMultipleSelection: false
             ) { result in
                 switch result {
-                case .success(let urls):
-                    guard let url = urls.first else { return }
-                    importFile(url: url)
+                case .success(let url):
+                    importFileToLocalSandbox(url: url)
                 case .failure(let error):
-                    print("导入失败: \(error.localizedDescription)")
+                    print("选择文件失败: \(error.localizedDescription)")
                 }
             }
         }
     }
     
-    private func importFile(url: URL) {
-        let isAccessing = url.startAccessingSecurityScopedResource()
-        defer { if isAccessing { url.stopAccessingSecurityScopedResource() } }
+    // 关键修正：将文件安全复制到 App 沙盒内部的 Documents 目录
+    private func importFileToLocalSandbox(url: URL) {
+        let safeURL = url
+        guard safeURL.startAccessingSecurityScopedResource() else { return }
+        defer { safeURL.stopAccessingSecurityScopedResource() }
         
-        let ext = url.pathExtension.lowercased()
-        let type: FileType = (ext == "pdf") ? .pdf : .image
-        let newSheet = SheetMusic(
-            title: url.deletingPathExtension().lastPathComponent,
-            fileURL: url,
-            type: type,
-            folder: selectedFolder == "全部" ? "未分类" : selectedFolder
-        )
-        sheets.append(newSheet)
+        do {
+            let docsDir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+            let destinationURL = docsDir.appendingPathComponent(safeURL.lastPathComponent)
+            
+            // 如果已存在同名文件则先移除
+            if FileManager.default.fileExists(atPath: destinationURL.path) {
+                try FileManager.default.removeItem(at: destinationURL)
+            }
+            
+            // 执行复制操作
+            try FileManager.default.copyItem(at: safeURL, to: destinationURL)
+            
+            let ext = destinationURL.pathExtension.lowercased()
+            let type: FileType = (ext == "pdf") ? .pdf : .image
+            
+            let newSheet = SheetMusic(
+                title: destinationURL.deletingPathExtension().lastPathComponent,
+                fileURL: destinationURL,
+                type: type,
+                folder: selectedFolder == "全部" ? "未分类" : selectedFolder
+            )
+            
+            DispatchQueue.main.async {
+                self.sheets.append(newSheet)
+            }
+        } catch {
+            print("复制文件失败: \(error.localizedDescription)")
+        }
     }
 }
 
