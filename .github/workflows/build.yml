@@ -1,0 +1,63 @@
+name: Build Unsigned IPA
+
+on:
+  push:
+    branches: [ "main" ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: macos-14
+
+    steps:
+    - name: Checkout Code
+      uses: actions/checkout@v4
+
+    - name: Create Xcode Project
+      run: |
+        mkdir -p SheetMusicApp
+        mv ContentView.swift SheetMusicApp/
+        cat << 'EOF' > SheetMusicApp/Info.plist
+        <?xml version="1.0" encoding="UTF-8"?>
+        <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+        <plist version="1.0">
+        <dict>
+            <key>CFBundleIdentifier</key>
+            <string>com.test.SheetMusicApp</string>
+            <key>CFBundleName</key>
+            <string>SheetMusicApp</string>
+            <key>CFBundlePackageType</key>
+            <string>APPL</string>
+            <key>CFBundleShortVersionString</key>
+            <string>1.0</string>
+            <key>CFBundleVersion</key>
+            <string>1</string>
+            <key>UISupportedInterfaceOrientations</key>
+            <array>
+                <string>UIInterfaceOrientationPortrait</string>
+                <string>UIInterfaceOrientationLandscapeLeft</string>
+                <string>UIInterfaceOrientationLandscapeRight</string>
+            </array>
+        </dict>
+        </plist>
+        EOF
+
+    - name: Compile Swift Code
+      run: |
+        xcrun -sdk iphoneos swiftc -parse-as-library \
+          SheetMusicApp/ContentView.swift \
+          -target arm64-apple-ios15.0 \
+          -o SheetMusicApp/SheetMusicApp
+
+    - name: Package into IPA
+      run: |
+        mkdir -p Payload
+        cp -r SheetMusicApp Payload/SheetMusicApp.app
+        cp SheetMusicApp/Info.plist Payload/SheetMusicApp.app/
+        zip -r SheetMusicApp.ipa Payload
+
+    - name: Upload IPA Artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: SheetMusicApp-Unsigned-IPA
+        path: SheetMusicApp.ipa
